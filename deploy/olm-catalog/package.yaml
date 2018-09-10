@@ -1,0 +1,5 @@
+packageName: eap
+channels:
+- name: alpha
+  currentCSV: eap.v0.0.1
+

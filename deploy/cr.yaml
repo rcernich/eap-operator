@@ -1,0 +1,5 @@
+apiVersion: eapapplicationconfig.config.openshift.io/v1alpha1
+kind: EAP
+metadata:
+  name: example
+

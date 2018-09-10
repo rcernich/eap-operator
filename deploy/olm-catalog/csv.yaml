@@ -1,0 +1,83 @@
+apiVersion: app.coreos.com/v1alpha1
+kind: ClusterServiceVersion-v1
+metadata:
+  name: eap.v0.0.1
+  namespace: placeholder
+spec:
+  install:
+    strategy: deployment
+    spec:
+      permissions:
+      - serviceAccountName: eap-operator
+        rules:
+        - apiGroups:
+          - eapapplicationconfig.config.openshift.io
+          resources:
+          - "*"
+          verbs:
+          - "*"
+        - apiGroups:
+          - ""
+          resources:
+          - pods
+          - services
+          - endpoints
+          - persistentvolumeclaims
+          - events
+          - configmaps
+          - secrets
+          verbs:
+          - "*"
+        - apiGroups:
+          - apps
+          resources:
+          - deployments
+          - daemonsets
+          - replicasets
+          - statefulsets
+          verbs:
+          - "*"
+      deployments:
+      - name: eap-operator
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: eap-operator
+          template:
+            metadata:
+              labels:
+                app: eap-operator
+            spec:
+              containers:
+                - name: eap-operator-olm-owned
+                  image: eap-operator:latest
+                  command:
+                  - eap-operator
+                  imagePullPolicy: Always
+                  env:
+                  - name: MY_POD_NAMESPACE
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: metadata.namespace
+                  - name: MY_POD_NAME
+                    valueFrom:
+                      fieldRef:
+                        fieldPath: metadata.name
+              restartPolicy: Always
+              terminationGracePeriodSeconds: 5
+              serviceAccountName: eap-operator
+              serviceAccount: eap-operator
+  customresourcedefinitions:
+    owned:
+      - description: Represents an instance of an EAP application
+        displayName: EAP Application
+        kind: EAP
+        name: eaps.eapapplicationconfig.config.openshift.io
+        version: 0.0.1
+  version: alpha
+  displayName: EAP
+  labels:
+    olm-owner-enterprise-app: eap-operator
+    olm-status-descriptors: eap.v0.0.1
+

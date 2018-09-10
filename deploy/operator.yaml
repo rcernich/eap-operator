@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: List
+items:
+
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: eap-operator
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        name: eap-operator
+    template:
+      metadata:
+        labels:
+          name: eap-operator
+      spec:
+        containers:
+          - name: eap-operator
+            image: eap-operator:latest
+            ports:
+            - containerPort: 60000
+              name: metrics
+            command:
+            - eap-operator
+            imagePullPolicy: Always
+            env:
+              - name: WATCH_NAMESPACE
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.namespace
+              - name: OPERATOR_NAME
+                value: "eap-operator"
+          volumeMounts:
+          - mountPath: /var/run/configmaps/config
+            name: config
+        volumes:
+        - name: config
+          configMap:
+            defaultMode: 440
+            name: eap-operator-config
+
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: eap-operator-config
+  data:
+    operator-config.yaml: |
+      apiVersion: operator.openshift.io/v1alpha1
+      kind: GenericOperatorConfig
+      metadata:
+        annotations:
+          "eapapplicationconfig.config.openshift.io/image/builder": "openshift/jboss-eap64-openshift:latest"
+          "eapapplicationconfig.config.openshift.io/image/6.4": "openshift/jboss-eap64-openshift:latest"
+          "eapapplicationconfig.config.openshift.io/image/7.1": "openshift/jboss-eap71-openshift:latest"
+
