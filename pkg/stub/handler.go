@@ -30,7 +30,7 @@ type Handler struct {
 
 func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	switch o := event.Object.(type) {
-	case *v1alpha1.EAPApplicationOperatorConfig:
+	case *v1alpha1.EAPApplicationConfig:
 		// Ignore the delete event since the garbage collector will clean up all secondary resources for the CR
 		// All secondary resources must have the CR set as their OwnerReference for this to be the case
 		if event.Deleted {
@@ -79,7 +79,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 }
 
 // asOwner returns an OwnerReference set as the EAP Application CR
-func asOwner(config *v1alpha1.EAPApplicationOperatorConfig) metav1.OwnerReference {
+func asOwner(config *v1alpha1.EAPApplicationConfig) metav1.OwnerReference {
 	trueVar := true
 	return metav1.OwnerReference{
 		APIVersion: config.APIVersion,
@@ -90,21 +90,21 @@ func asOwner(config *v1alpha1.EAPApplicationOperatorConfig) metav1.OwnerReferenc
 	}
 }
 
-func createLabels(config *v1alpha1.EAPApplicationOperatorConfig) map[string]string {
+func createLabels(config *v1alpha1.EAPApplicationConfig) map[string]string {
 	return map[string]string{
 		"app":      config.GetName(),
-		"operator": v1alpha1.SchemeGroupVersion.String(),
+		"operator": "eap-operator",
 	}
 }
 
 func outputImageName(objectMeta metav1.Object) string {
-	return objectMeta.GetName() + "-app"
+	return objectMeta.GetName()
 }
 
 func outputImageTag() string {
 	return "latest"
 }
-func syncOutputImage(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[string]string, owner *metav1.OwnerReference) error {
+func syncOutputImage(config *v1alpha1.EAPApplicationConfig, labels *map[string]string, owner *metav1.OwnerReference) error {
 	imageStream := &imagev1.ImageStream{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ImageStream",
@@ -128,7 +128,7 @@ func syncOutputImage(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[
 	return err
 }
 
-func syncBuildConfig(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[string]string, owner *metav1.OwnerReference) error {
+func syncBuildConfig(config *v1alpha1.EAPApplicationConfig, labels *map[string]string, owner *metav1.OwnerReference) error {
 	buildConfig := &buildv1.BuildConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "BuildConfig",
@@ -146,10 +146,11 @@ func syncBuildConfig(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[
 		if !errors.IsNotFound(err) {
 			return fmt.Errorf("Error synchronizing BuildConfig: %v", err)
 		}
+		createOrUpdate = sdk.Create
+		buildConfig.SetOwnerReferences(append(buildConfig.GetOwnerReferences(), *owner))
+		} else {
 		// Update the existing BuildConfig
 		createOrUpdate = sdk.Update
-	} else {
-		createOrUpdate = sdk.Create
 	}
 	buildConfig.Labels = *labels
 	switch config.Spec.BuildConfig.Type {
@@ -159,7 +160,6 @@ func syncBuildConfig(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[
 	default:
 		return fmt.Errorf("Unknown BuildType in config: %v", config.Spec.BuildConfig.Type)
 	}
-	buildConfig.SetOwnerReferences(append(buildConfig.GetOwnerReferences(), *owner))
 	buildConfig.Spec.Output.To = &corev1.ObjectReference{
 		Kind: "ImageStreamTag",
 		Name: outputImageName(config.GetObjectMeta()) + ":" + outputImageTag(),
@@ -167,7 +167,7 @@ func syncBuildConfig(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[
 	if config.Spec.Image == nil {
 		buildConfig.Spec.Strategy.SourceStrategy.From = corev1.ObjectReference{
 			Kind: "ImageStreamTag",
-			Name: "jboss-eap-openshift:1.8",
+			Name: "jboss-eap64-openshift:1.8",
 			Namespace: "openshift",
 		}
 	} else {
@@ -178,12 +178,16 @@ func syncBuildConfig(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[
 }
 
 func processGenericBuildConfig(config *v1alpha1.GenericBuildConfig, buildConfig *buildv1.BuildConfigSpec) {
+	var incrementalBuilds *bool
+	if config.GenericOptions != nil && config.GenericOptions.IncrementalBuilds != nil {
+		incrementalBuilds = config.GenericOptions.IncrementalBuilds
+	}
 	buildConfig.Source = config.BuildSource
 	buildConfig.Strategy.Type = buildv1.SourceBuildStrategyType
 	buildConfig.Strategy.SourceStrategy = &buildv1.SourceBuildStrategy{
 		Env:         config.Env,
 		ForcePull:   true,
-		Incremental: config.GenericOptions.IncrementalBuilds,
+		Incremental: incrementalBuilds,
 	}
 	processImageSourceMounts(config, buildConfig)
 	processGenericOptions(config.GenericOptions, buildConfig)
@@ -218,6 +222,9 @@ func processImageSourceMounts(config *v1alpha1.GenericBuildConfig, buildConfig *
 }
 
 func processGenericOptions(options *v1alpha1.GenericBuildOptions, buildConfig *buildv1.BuildConfigSpec) {
+	if options == nil {
+		return
+	}
 	envs := make([]corev1.EnvVar,0,8)
 	if options.IncrementalBuilds != nil {
 		envs = append(envs, corev1.EnvVar{
@@ -262,7 +269,7 @@ func processMavenOptions(options *v1alpha1.MavenOptions, buildConfig *buildv1.Bu
 	// TODO
 }
 
-func syncDeploymentConfig(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[string]string, owner *metav1.OwnerReference) error {
+func syncDeploymentConfig(config *v1alpha1.EAPApplicationConfig, labels *map[string]string, owner *metav1.OwnerReference) error {
 	deployConfig := &appsv1.DeploymentConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "DeploymentConfig",
@@ -278,12 +285,13 @@ func syncDeploymentConfig(config *v1alpha1.EAPApplicationOperatorConfig, labels 
 	err := sdk.Get(deployConfig)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			return fmt.Errorf("Error synchronizing BuildConfig: %v", err)
+			return fmt.Errorf("Error synchronizing DeploymentConfig: %v", err)
 		}
-		// Update the existing BuildConfig
-		createOrUpdate = sdk.Update
-	} else {
 		createOrUpdate = sdk.Create
+		deployConfig.SetOwnerReferences(append(deployConfig.GetOwnerReferences(), *owner))
+		} else {
+		// Update the existing DeploymentConfig
+		createOrUpdate = sdk.Update
 	}
 	deployConfig.Labels = *labels
 
@@ -328,7 +336,7 @@ func syncDeploymentConfig(config *v1alpha1.EAPApplicationOperatorConfig, labels 
 						ImagePullPolicy: corev1.PullAlways,
 						Resources: corev1.ResourceRequirements{
 							Limits: corev1.ResourceList{
-								corev1.ResourceLimitsMemory: memoryLimit,
+								corev1.ResourceMemory: memoryLimit,
 							},
 						},
 						LivenessProbe: &corev1.Probe{
@@ -373,12 +381,11 @@ func syncDeploymentConfig(config *v1alpha1.EAPApplicationOperatorConfig, labels 
 			},
 		},
 	}
-	deployConfig.SetOwnerReferences(append(deployConfig.GetOwnerReferences(), *owner))
 	err = createOrUpdate(deployConfig)
 	return err
 }
 
-func syncServices(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[string]string, owner *metav1.OwnerReference) error {
+func syncServices(config *v1alpha1.EAPApplicationConfig, labels *map[string]string, owner *metav1.OwnerReference) error {
 	appService := &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Service",
@@ -407,10 +414,11 @@ func syncServices(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[str
 		if !errors.IsNotFound(err) {
 			return fmt.Errorf("Error synchronizing application Service: %v", err)
 		}
-		// Update the existing BuildConfig
-		createOrUpdate = sdk.Update
-	} else {
 		createOrUpdate = sdk.Create
+		appService.SetOwnerReferences(append(appService.GetOwnerReferences(), *owner))
+		} else {
+		// Update the existing Service
+		createOrUpdate = sdk.Update
 	}
 	appService.Labels = *labels
 	appService.Spec = corev1.ServiceSpec{
@@ -421,9 +429,9 @@ func syncServices(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[str
 				Port: 8080,
 			},
 		},
+		ClusterIP: appService.Spec.ClusterIP,
 		Selector: *labels,
 	}
-	appService.SetOwnerReferences(append(appService.GetOwnerReferences(), *owner))
 	err = createOrUpdate(appService)
 	if err != nil {
 		return fmt.Errorf("Error synchronizing application Service: %v", err)
@@ -434,10 +442,11 @@ func syncServices(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[str
 		if !errors.IsNotFound(err) {
 			return fmt.Errorf("Error synchronizing cluster Service: %v", err)
 		}
-		// Update the existing BuildConfig
-		createOrUpdate = sdk.Update
-	} else {
 		createOrUpdate = sdk.Create
+		clusterService.SetOwnerReferences(append(clusterService.GetOwnerReferences(), *owner))
+		} else {
+		// Update the existing Service
+		createOrUpdate = sdk.Update
 	}
 	clusterService.Labels = *labels
 	clusterService.Spec = corev1.ServiceSpec{
@@ -449,9 +458,9 @@ func syncServices(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[str
 			},
 		},
 		Selector: *labels,
+		ClusterIP: corev1.ClusterIPNone,
 		PublishNotReadyAddresses: true,
 	}
-	clusterService.SetOwnerReferences(append(clusterService.GetOwnerReferences(), *owner))
 	err = createOrUpdate(clusterService)
 	if err != nil {
 		return fmt.Errorf("Error synchronizing cluster Service: %v", err)
@@ -459,7 +468,7 @@ func syncServices(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[str
 	return nil
 }
 
-func syncRoutes(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[string]string, owner *metav1.OwnerReference) error {
+func syncRoutes(config *v1alpha1.EAPApplicationConfig, labels *map[string]string, owner *metav1.OwnerReference) error {
 	routeConfig := &routev1.Route{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Route",
@@ -475,15 +484,15 @@ func syncRoutes(config *v1alpha1.EAPApplicationOperatorConfig, labels *map[strin
 	err := sdk.Get(routeConfig)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			return fmt.Errorf("Error synchronizing BuildConfig: %v", err)
+			return fmt.Errorf("Error synchronizing Route: %v", err)
 		}
-		// Update the existing BuildConfig
-		createOrUpdate = sdk.Update
-	} else {
 		createOrUpdate = sdk.Create
+		routeConfig.SetOwnerReferences(append(routeConfig.GetOwnerReferences(), *owner))
+		} else {
+		// Update the existing Route
+		createOrUpdate = sdk.Update
 	}
 	routeConfig.Labels = *labels
-	routeConfig.SetOwnerReferences(append(routeConfig.GetOwnerReferences(), *owner))
 	routeConfig.Spec = routev1.RouteSpec{
 		To: routev1.RouteTargetReference{
 			Kind: "Service",

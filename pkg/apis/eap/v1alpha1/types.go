@@ -7,29 +7,29 @@ import (
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type EAPApplicationOperatorConfigList struct {
+type EAPApplicationConfigList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata"`
-	Items           []EAPApplicationOperatorConfig `json:"items"`
+	Items           []EAPApplicationConfig `json:"items"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-type EAPApplicationOperatorConfig struct {
+type EAPApplicationConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
-	Spec              EAPApplicationOperatorConfigSpec   `json:"spec"`
-	Status            EAPApplicationOperatorConfigStatus `json:"status,omitempty"`
+	Spec              EAPApplicationConfigSpec   `json:"spec"`
+	Status            EAPApplicationConfigStatus `json:"status,omitempty"`
 }
 
-// EAPApplicationOperatorConfigSpec defines the configuration for an EAP based application
-type EAPApplicationOperatorConfigSpec struct {
+// EAPApplicationConfigSpec defines the configuration for an EAP based application
+type EAPApplicationConfigSpec struct {
 	BuildConfig ApplicationBuildConfig `json:"buildConfig"`
 	// image is reference to an DockerImage, ImageStreamTag, or ImageStreamImage which is used instead of the default image
 	Image *corev1.ObjectReference `json:"image,omitempty"`
 }
 
-// EAPApplicationOperatorConfigStatus defines the current status of the operator
-type EAPApplicationOperatorConfigStatus struct {
+// EAPApplicationConfigStatus defines the current status of the operator
+type EAPApplicationConfigStatus struct {
 	// Fill me
 }
 

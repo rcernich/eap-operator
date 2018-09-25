@@ -1,15 +1,15 @@
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
-  name: eapapplicationoperatorconfigs.eapapplication.config.openshift.io
+  name: eapapplicationconfigs.eapapplicationconfig.config.openshift.io
 spec:
   scope: Namespaced
   group: eapapplicationconfig.config.openshift.io
   version: v1alpha1
   names:
-    kind: EAPApplicationOperatorConfig
-    listKind: EAPApplicationOperatorConfigList
-    plural: eapapplicationoperatorconfigs
-    singular: eapapplicationoperatorconfig
+    kind: EAPApplicationConfig
+    listKind: EAPApplicationConfigList
+    plural: eapapplicationconfigs
+    singular: eapapplicationconfig
   subresources:
     status: {}

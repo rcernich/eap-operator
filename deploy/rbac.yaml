@@ -1,4 +1,5 @@
 apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: Role
 metadata:
   name: eap-operator 
 rules:
@@ -28,4 +29,49 @@ rules:
   - replicasets
   - statefulsets
   verbs:
+  - "*"
+- apiGroups:
+  - apps.openshift.io
+  resources:
+  - deploymentconfigs
+  verbs:
+  - "*"
+- apiGroups:
+  - build.openshift.io
+  resources:
+  - buildconfigs
+  verbs:
+  - "*"
+- apiGroups:
+  - image.openshift.io
+  resources:
+  - imagestreams
+  verbs:
+  - "*"
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
+  verbs:
+  - "*"
 
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eap-operator
+
+---
+
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+apiGroup: rbac.authorization.k8s.io
+metadata:
+  name: default-account-eap-operator
+subjects:
+- kind: ServiceAccount
+  name: eap-operator
+roleRef:
+  kind: Role
+  name: eap-operator

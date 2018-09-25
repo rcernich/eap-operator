@@ -1,4 +1,4 @@
-f ! which docker > /dev/null; then
+if ! which docker > /dev/null; then
 	echo "docker needs to be installed"
 	exit 1
 fi
